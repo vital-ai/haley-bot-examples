@@ -40,6 +40,7 @@
       <groupId>ai.haley</groupId>
       <artifactId>haley-bot-api</artifactId>
       <version>0.2.0</version>
+      <scope>provided</scope>
     </dependency>
     
     
@@ -47,12 +48,14 @@
 		<groupId>vitalai-com</groupId>
 		<artifactId>vital-nlp</artifactId>
 		<version>${vital.version}</version>
+	    <scope>provided</scope>
 	</dependency>
 	
 	<dependency>
-      <groupId>vital-ai</groupId>
-      <artifactId>whiskies</artifactId>
-      <version>1.0.1</version>
+        <groupId>vital-ai</groupId>
+        <artifactId>whiskies</artifactId>
+        <version>1.0.1</version>
+	    <scope>provided</scope>
     </dependency>
   	
   </dependencies>
