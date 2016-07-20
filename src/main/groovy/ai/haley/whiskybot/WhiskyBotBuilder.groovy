@@ -2,6 +2,7 @@ package ai.haley.whiskybot
 
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import groovy.lang.Closure;
 
 import org.example.whiskies.domain.Whisky
 import org.example.whiskies.domain.WhiskyPreferenceFact
@@ -53,18 +54,18 @@ class WhiskyBotBuilder extends BotBuilder {
 	private final static Logger log = LoggerFactory.getLogger(WhiskyBotBuilder.class)
 	
 	public final static String WHISKY_BOT = 'whiskey'
-	private final static FactScope scope = FactScope.dialog
+	protected final static FactScope scope = FactScope.dialog
 	
 	//set it to test short list
-	private Integer totalWhiskiesCount = null
+	protected Integer totalWhiskiesCount = null
 	
-	private String modelName
+	protected String modelName
 	
-	private String serviceName
+	protected String serviceName
 	
-	private String segmentID
+	protected String segmentID
 
-	private VitalApp app
+	protected VitalApp app
 	
 	public final static String FACT_WHISKY_ROUND = 'whisky-round'
 	
@@ -197,6 +198,19 @@ class WhiskyBotBuilder extends BotBuilder {
 			id: "queryForWhiskies-",
 			createResultListFact: true,
 			serviceName: serviceName,
+			//by default all queries are available
+			available: { DialogQuery thisElement, AgentContext context ->
+				
+				//do execute query if this is a repeated question
+				String nextURI = thisElement.state.get(FACT_NEXT_WHISKY_URI)
+				if(nextURI != null) {
+					context.setFact(scope, _innerNextWhiskyURIQuestion, nextURI)
+					return false					
+				} else {
+					return true
+				}
+				
+			},
 			createQuery: { DialogQuery thisElement, AgentContext context ->
 				
 				List<String> seenURIs = []
@@ -247,6 +261,7 @@ class WhiskyBotBuilder extends BotBuilder {
 					return
 				}
 				
+				thisElement.state.put(FACT_NEXT_WHISKY_URI, nextWhisky.URI)
 				context.setFact(scope, _innerNextWhiskyURIQuestion, nextWhisky.URI)
 				
 			}
@@ -398,7 +413,10 @@ class WhiskyBotBuilder extends BotBuilder {
 				fact.liked = liked
 				
 				context.addGenericFactObject(scope, context.getFactGraphRoot(scope), fact)
-				
+			
+				//in order to revert it
+				questionData.factsURIs.add(fact.URI)
+					
 				return true
 				
 			}
