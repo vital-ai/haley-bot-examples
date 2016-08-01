@@ -603,7 +603,7 @@ class WhiskyBotBuilder extends BotBuilder {
 			
 			UserTextMessage utm = messageObjects[0]
 			
-			if( DialogMode.searchmode == context.dialogState.mode ) {
+			if( DialogMode.search == context.dialogState.mode ) {
 				
 				context.sendTextMessage(utm, "The ${WHISKY_BOT} dialog is now complete.")
 				
