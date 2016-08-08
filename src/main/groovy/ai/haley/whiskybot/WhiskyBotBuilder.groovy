@@ -27,6 +27,7 @@ import ai.haley.agent.domain.DialogQuery
 import ai.haley.agent.domain.DialogQuestion
 import ai.haley.agent.domain.DialogQuestionEnd
 import ai.haley.agent.domain.DialogQuestionStart
+import ai.haley.agent.domain.DialogSwitchBot
 import ai.haley.agent.domain.DialogText
 import ai.vital.query.querybuilder.VitalBuilder
 import ai.vital.vitalservice.VitalStatus
@@ -40,6 +41,7 @@ import ai.vital.vitalsigns.model.VitalApp
 import ai.vital.vitalsigns.model.properties.Property_hasName
 import ai.vital.vitalsigns.model.property.BooleanProperty
 
+import com.vitalai.aimp.domain.AnswerMessage;
 import com.vitalai.aimp.domain.BooleanPropertyFact;
 import com.vitalai.aimp.domain.ButtonClickedMessage
 import com.vitalai.aimp.domain.Choice
@@ -137,15 +139,6 @@ class WhiskyBotBuilder extends BotBuilder {
 	
 		app = agent.getApp()
 		
-		Boolean switchToDefaultBotOnCloseParam = config.get('switchToDefaultBotOnClose')
-		
-		if(switchToDefaultBotOnCloseParam != null) {
-			log.info("switchToDefaultBotOnClose param: ${switchToDefaultBotOnCloseParam}")
-			switchToDefaultBotOnClose = switchToDefaultBotOnCloseParam.booleanValue()
-		} else {
-			log.warn("No switchToDefaultBotOnClose param, default assumed")
-		}
-		
 		helpMessageContent = { AgentContext context, DialogQuestion question ->
 
 			return """\
@@ -168,6 +161,16 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 
 		Dialog dialog = new Dialog()
 		dialog.mode = DialogMode.guided
+		
+		
+		dialog.onClose = { AgentContext context, AnswerMessage msg -> 
+			
+			String newBotID = agent.defaultBotID
+			
+			context.switchToBot(msg, newBotID);
+			
+		}
+		
 
 		dialog.add( new DialogBegin() )
 		
@@ -188,24 +191,32 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 			}
 		) )
 
-		
 		//add text message now
 		dialog.add( new DialogText(
 			id: 'ageQuestionText',
 			available: { DialogText dialogText, AgentContext context ->
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				return ageAbove != null
+//				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+//				return ageAbove != null
+				return true
 			}, 
 			text: { AgentContext context ->
 				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				if(ageAbove.booleanValue()) {
+				if(ageAbove != null && ageAbove.booleanValue()) {
 					return 'Ok, I can recommend whiskey to you.'
 				} else {
 					return 'Sorry, I can\'t recommend whiskey for you.'
 				}
 			}
 		) )
-						
+		
+		//conditional end
+		dialog.add( new DialogEnd(
+			available: { DialogEnd dialogEnd, AgentContext context ->
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				return ageAbove == null || !ageAbove.booleanValue()
+			}
+		))			
+			
 //		"" Yes / No -- if "No" say "Sorry, I can't recommend whiskey for you." and return to Haley. If Yes, say "Ok, I can recommend whiskey to you."
 		
 		
@@ -214,8 +225,7 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 			serviceName: serviceName,
 			createResultListFact: false,
 			available: { DialogQuery thisElement, AgentContext context ->
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				return ageAbove != null && ageAbove.booleanValue() && totalWhiskiesCount == null
+				return totalWhiskiesCount == null
 			},
 			createQuery: { DialogQuery thisElement, AgentContext context ->
 				return vitalBuilder.query {
@@ -262,8 +272,6 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 			serviceName: serviceName,
 			//by default all queries are available
 			available: { DialogQuery thisElement, AgentContext context ->
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				if(ageAbove == null || !ageAbove.booleanValue()) return false
 				//do execute query if this is a repeated question
 				String nextURI = thisElement.state.get(FACT_NEXT_WHISKY_URI)
 				if(nextURI != null) {
@@ -337,8 +345,6 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 			createResultListFact: true,
 			serviceName: serviceName,
 			available: { DialogQuery thisElement, AgentContext context ->
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				if(ageAbove == null || !ageAbove.booleanValue()) return false
 				String previousResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
 				return previousResponse != null && previousResponse == like_whiskey_yes
 			},
@@ -418,10 +424,6 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 			factPropertyName: FACT_LIKE_RESPONSE,
 			factScope: scope,
 			generated: true,
-			available: {DialogQuestion q, AgentContext context ->
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				return ageAbove != null && ageAbove.booleanValue()
-			},
 			question: { DialogQuestion q, AgentContext ctx ->
 
 				String whiskyURI = ctx.getStringFact(scope, FACT_NEXT_WHISKY_URI)?.stringValue
@@ -494,8 +496,6 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 		DialogPredict predict = new DialogPredict(
 			id: 'whiskypredict-',
 			available: { DialogPredict thisElement, AgentContext context ->
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				if( ageAbove == null || !ageAbove.booleanValue()) return false
 				String previousResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
 				return previousResponse != null && previousResponse == like_whiskey_yes
 			}, 
@@ -526,8 +526,6 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 		DialogText yesText = new DialogText(
 			id: 'yestext-',
 			available: { DialogText thisElement, AgentContext context ->
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				if( ageAbove == null || !ageAbove.booleanValue()) return false
 				String previousResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
 				return previousResponse != null && previousResponse == like_whiskey_yes
 			},
@@ -573,13 +571,6 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 		dialog.add( new DialogGenerator(
 			
 			id: 'whiskyBotDialogGenerator',
-			
-			available: {DialogGenerator dg, AgentContext context ->
-
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				return ageAbove != null && ageAbove.booleanValue()
-								
-			},
 			generateDialog: { DialogGenerator thisElement, AgentContext context ->
 				
 				Integer roundNo = context.getIntegerFact(scope, FACT_WHISKY_ROUND)?.integerValue
@@ -612,22 +603,27 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 					}
 					
 				}
+
 				
+				List<DialogElement> newEls = []
+				
+				newEls.add( new DialogQuestionStart() )
 				
 				//check previous response
 				String previousResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
 				
 				if(previousResponse != null && previousResponse == like_whiskey_change_topic) {
 					
-					//done
-					return true
+					//done, but this would exit the dialog and destroy state, we want to keep current state but simply switch bot for now
+//					return true
+					newEls.add(new DialogSwitchBot(
+						switchBot: { DialogSwitchBot dsb, AgentContext ctx ->
+							return ctx.agentInstance.defaultBotID
+						}
+					))
 					
 				}
 				
-				
-				List<DialogElement> newEls = [
-					new DialogQuestionStart()
-				]
 				
 				if(totalWhiskiesCount == null) {
 					DialogQuery c = queryForTotal.copy()
@@ -669,15 +665,6 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 		
 		
 		dialog.add( new DialogText(
-			
-			available: {DialogText dt, AgentContext context ->
-				
-				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
-				return ageAbove != null && ageAbove.booleanValue()
-//				return true
-												
-			},
-			
 			
 			text: { AgentContext context ->
 				"Please drink responsibly. Bye!"
