@@ -37,6 +37,7 @@ import ai.vital.vitalservice.query.VitalSortProperty
 import ai.vital.vitalsigns.json.JSONSerializer
 import ai.vital.vitalsigns.model.GraphObject
 import ai.vital.vitalsigns.model.VITAL_Container
+import ai.vital.vitalsigns.model.VITAL_GraphContainerObject
 import ai.vital.vitalsigns.model.VitalApp
 import ai.vital.vitalsigns.model.properties.Property_hasName
 import ai.vital.vitalsigns.model.property.BooleanProperty
@@ -59,7 +60,9 @@ import com.vitalai.domain.nlp.TargetNode
 class WhiskyBotBuilder extends BotBuilder {
 
 	private final static Logger log = LoggerFactory.getLogger(WhiskyBotBuilder.class)
-	
+
+	private final static String GOOGLE_MAPS_SCRIPT = 'commons/scripts/GoogleMapsSearchScript.groovy'
+		
 	protected final static FactScope scope = FactScope.dialog
 	
 	//set it to test short list
@@ -465,11 +468,26 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 				
 				boolean resp = 	questionData.defaultProcessMessage(questionData, context, answerObjects)
 				if(!resp) return resp
-				if(questionData.skipped) return resp
+				if(questionData.skipped) {
+					//skipped question clears the last response fact
+					context.removeFacts(scope, FACT_LIKE_RESPONSE)
+					return resp
+				}
 				
 				String whiskyURI = context.getStringFact(scope, FACT_NEXT_WHISKY_URI)?.stringValue
 				
 				String likedResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
+				
+				
+				//changing topic simply switches to default bot
+				if(likedResponse == like_whiskey_change_topic) {
+					
+					//done, but this would exit the dialog and destroy state, we want to keep current state but simply switch bot for now
+					context.switchToBot(null, context.agentInstance.defaultBotID)
+					return false
+					
+				}
+				
 				
 				Boolean liked = null
 				
@@ -555,7 +573,7 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 					
 					if(i > 0) txt += " and "
 					
-					txt += " ${w.name}"
+					txt += " <b>${w.name}</b>"
 					
 					EmbeddedCard card = new EmbeddedCard()
 					card.button = 'Details'
@@ -612,6 +630,7 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 				//check previous response
 				String previousResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
 				
+				/*
 				if(previousResponse != null && previousResponse == like_whiskey_change_topic) {
 					
 					//done, but this would exit the dialog and destroy state, we want to keep current state but simply switch bot for now
@@ -623,6 +642,7 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 					))
 					
 				}
+				*/
 				
 				
 				if(totalWhiskiesCount == null) {
@@ -739,6 +759,30 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 				return true
 			}
 			
+			if(whisky.address == null || whisky.mapData == null) {
+				
+				
+				ResultList rl = context.agentInstance.callFunction(GOOGLE_MAPS_SCRIPT, [query: '' + whisky.name + ' Distillery']);
+				if(rl.status.status == VitalStatus.Status.ok) {
+					
+					VITAL_GraphContainerObject location = rl.first()
+
+					if(location != null) {
+						
+						whisky.address = '' + whisky.name + ' Distillery'
+						whisky.mapData = location.jsonData.toString()
+						
+					} else {
+						log.error("Location not found for whisky: ${whisky.name}")
+					}
+										
+					
+				} else {
+					log.error("Error when looking up whisky ${whisky.name} location details: " + rl.status.message)
+				}
+				
+			}
+			
 			EntityMessage em = new EntityMessage()
 			em.text = "Whiskey Details"
 			context.sendGenericMessage(msg, em, whisky)
@@ -756,10 +800,11 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 			if(de instanceof DialogQuestion) {
 				
 				//use same question as next
-				//keep it in the queue and resend with help info
 				de.sent = false
 							
 				//question URI must be changed - new message instance
+				de.helpRequested = false
+				de.skipped = false
 				de.generateURI()
 								
 				context.sendQuestion(de, msg, null)
