@@ -38,14 +38,19 @@ import ai.vital.vitalsigns.model.GraphObject
 import ai.vital.vitalsigns.model.VITAL_Container
 import ai.vital.vitalsigns.model.VitalApp
 import ai.vital.vitalsigns.model.properties.Property_hasName
+import ai.vital.vitalsigns.model.property.BooleanProperty
 
+import com.vitalai.aimp.domain.BooleanPropertyFact;
 import com.vitalai.aimp.domain.ButtonClickedMessage
 import com.vitalai.aimp.domain.Choice
 import com.vitalai.aimp.domain.DoublePropertyFact
 import com.vitalai.aimp.domain.EmbeddedCard
+import com.vitalai.aimp.domain.EntityMessage;
 import com.vitalai.aimp.domain.IntegerPropertyFact
 import com.vitalai.aimp.domain.MultiChoiceQuestion;
+import com.vitalai.aimp.domain.Question
 import com.vitalai.aimp.domain.StringPropertyFact
+import com.vitalai.aimp.domain.TrueFalseQuestion
 import com.vitalai.aimp.domain.UserTextMessage
 import com.vitalai.domain.nlp.TargetNode
 
@@ -53,7 +58,6 @@ class WhiskyBotBuilder extends BotBuilder {
 
 	private final static Logger log = LoggerFactory.getLogger(WhiskyBotBuilder.class)
 	
-	public final static String WHISKY_BOT = 'whiskey'
 	protected final static FactScope scope = FactScope.dialog
 	
 	//set it to test short list
@@ -110,6 +114,9 @@ class WhiskyBotBuilder extends BotBuilder {
 	)
 	
 	
+	public final static String FACT_AGE = 'age'
+	
+	
 	public final static String like_whiskey_yes = 'yes'
 	public final static String like_whiskey_no = 'no'
 	public final static String like_whiskey_dont_know = 'dont-know'
@@ -130,6 +137,29 @@ class WhiskyBotBuilder extends BotBuilder {
 	
 		app = agent.getApp()
 		
+		Boolean switchToDefaultBotOnCloseParam = config.get('switchToDefaultBotOnClose')
+		
+		if(switchToDefaultBotOnCloseParam != null) {
+			log.info("switchToDefaultBotOnClose param: ${switchToDefaultBotOnCloseParam}")
+			switchToDefaultBotOnClose = switchToDefaultBotOnCloseParam.booleanValue()
+		} else {
+			log.warn("No switchToDefaultBotOnClose param, default assumed")
+		}
+		
+		helpMessageContent = { AgentContext context, DialogQuestion question ->
+
+			return """\
+Hello! This is a sample conversation to get your preferences in whiskey and make whiskey recommendations. 
+You can click the buttons such as "Yes", "No", and "I don't know" to indicate your preference. 
+You can click the "Details" button next to the name of a whiskey to get information about a whiskey, including its taste characteristics. 
+These are the factors that help make a recommendation based on your likes and dislikes. 
+You can end this whiskey conversation by clicking the buttons "Change Topic" or "Close". 
+Naturally "Skip" skips a question, and "Go Back" returns to the previous question. Enjoy!
+"""			
+			
+			
+		}
+		
 	}
 	
 
@@ -143,9 +173,40 @@ class WhiskyBotBuilder extends BotBuilder {
 		
 		dialog.add( new DialogText(
 			text: { AgentContext context ->
-				"Hi! I'm the Whisky Bot."
+				"Hi! I'm the Whiskey Bot."
 			}
 		))
+
+		dialog.add( new DialogQuestion(
+			id: 'ageQuestion',
+			factClass: BooleanPropertyFact.class,
+			factPropertyName: FACT_AGE,
+			question: { DialogQuestion q, AgentContext ctx ->
+				new TrueFalseQuestion(text: "Are you over 21 years old (or the legal drinking age in your location) ?", trueLabel: 'Yes', falseLabel: 'No').generateURI(app) },
+			available: { DialogQuestion q, AgentContext context ->
+				return ! context.hasFactForQuestion(q)
+			}
+		) )
+
+		
+		//add text message now
+		dialog.add( new DialogText(
+			id: 'ageQuestionText',
+			available: { DialogText dialogText, AgentContext context ->
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				return ageAbove != null
+			}, 
+			text: { AgentContext context ->
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				if(ageAbove.booleanValue()) {
+					return 'Ok, I can recommend whiskey to you.'
+				} else {
+					return 'Sorry, I can\'t recommend whiskey for you.'
+				}
+			}
+		) )
+						
+//		"" Yes / No -- if "No" say "Sorry, I can't recommend whiskey for you." and return to Haley. If Yes, say "Ok, I can recommend whiskey to you."
 		
 		
 		DialogQuery queryForTotal = new DialogQuery(
@@ -153,7 +214,8 @@ class WhiskyBotBuilder extends BotBuilder {
 			serviceName: serviceName,
 			createResultListFact: false,
 			available: { DialogQuery thisElement, AgentContext context ->
-				return totalWhiskiesCount == null
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				return ageAbove != null && ageAbove.booleanValue() && totalWhiskiesCount == null
 			},
 			createQuery: { DialogQuery thisElement, AgentContext context ->
 				return vitalBuilder.query {
@@ -200,7 +262,8 @@ class WhiskyBotBuilder extends BotBuilder {
 			serviceName: serviceName,
 			//by default all queries are available
 			available: { DialogQuery thisElement, AgentContext context ->
-				
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				if(ageAbove == null || !ageAbove.booleanValue()) return false
 				//do execute query if this is a repeated question
 				String nextURI = thisElement.state.get(FACT_NEXT_WHISKY_URI)
 				if(nextURI != null) {
@@ -274,6 +337,8 @@ class WhiskyBotBuilder extends BotBuilder {
 			createResultListFact: true,
 			serviceName: serviceName,
 			available: { DialogQuery thisElement, AgentContext context ->
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				if(ageAbove == null || !ageAbove.booleanValue()) return false
 				String previousResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
 				return previousResponse != null && previousResponse == like_whiskey_yes
 			},
@@ -353,6 +418,10 @@ class WhiskyBotBuilder extends BotBuilder {
 			factPropertyName: FACT_LIKE_RESPONSE,
 			factScope: scope,
 			generated: true,
+			available: {DialogQuestion q, AgentContext context ->
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				return ageAbove != null && ageAbove.booleanValue()
+			},
 			question: { DialogQuestion q, AgentContext ctx ->
 
 				String whiskyURI = ctx.getStringFact(scope, FACT_NEXT_WHISKY_URI)?.stringValue
@@ -366,11 +435,11 @@ class WhiskyBotBuilder extends BotBuilder {
 				if(previousResponse == null || previousResponse == like_whiskey_yes) {
 					
 					//check if fact already set
-					txt = "Do you like whiskey ${whisky.name}? "
+					txt = "Do you like whiskey <b>${whisky.name}?</b> "
 					
 				} else {
 				
-					txt = "How about whiskey ${whisky.name}? "
+					txt = "How about whiskey <b>${whisky.name}?</b> "
 					
 				}
 				
@@ -378,7 +447,7 @@ class WhiskyBotBuilder extends BotBuilder {
 				EmbeddedCard card = new EmbeddedCard()
 				card.button = 'Details'
 				card.URI = whisky.URI
-				txt += "<json>${card.toJSON()}</json>"
+				txt += "<json>${card.toJSON()}</json> <br/>"
 				
 				return new MultiChoiceQuestion(text: txt).generateURI(app)
 				
@@ -425,6 +494,8 @@ class WhiskyBotBuilder extends BotBuilder {
 		DialogPredict predict = new DialogPredict(
 			id: 'whiskypredict-',
 			available: { DialogPredict thisElement, AgentContext context ->
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				if( ageAbove == null || !ageAbove.booleanValue()) return false
 				String previousResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
 				return previousResponse != null && previousResponse == like_whiskey_yes
 			}, 
@@ -438,6 +509,11 @@ class WhiskyBotBuilder extends BotBuilder {
 			},
 			processResults: {  DialogPredict thisElement, AgentContext context, ResultList results ->
 				
+				if(results.status.status != VitalStatus.Status.ok) {
+					context.sendTextMessage(null, 'ERROR: ' + results.status.message)
+					return
+				}
+				
 				TargetNode tn = (TargetNode) results.first()
 				
 				context.setFact(scope, _innerClusterIDQuestion, "${tn.targetDoubleValue.intValue()}")
@@ -449,8 +525,10 @@ class WhiskyBotBuilder extends BotBuilder {
 		
 		DialogText yesText = new DialogText(
 			id: 'yestext-',
-			available: { DialogText thisElement, AgentContext ctx ->
-				String previousResponse = ctx.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
+			available: { DialogText thisElement, AgentContext context ->
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				if( ageAbove == null || !ageAbove.booleanValue()) return false
+				String previousResponse = context.getStringFact(scope, FACT_LIKE_RESPONSE)?.stringValue
 				return previousResponse != null && previousResponse == like_whiskey_yes
 			},
 			text: { AgentContext ctx ->
@@ -496,6 +574,12 @@ class WhiskyBotBuilder extends BotBuilder {
 			
 			id: 'whiskyBotDialogGenerator',
 			
+			available: {DialogGenerator dg, AgentContext context ->
+
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				return ageAbove != null && ageAbove.booleanValue()
+								
+			},
 			generateDialog: { DialogGenerator thisElement, AgentContext context ->
 				
 				Integer roundNo = context.getIntegerFact(scope, FACT_WHISKY_ROUND)?.integerValue
@@ -585,6 +669,16 @@ class WhiskyBotBuilder extends BotBuilder {
 		
 		
 		dialog.add( new DialogText(
+			
+			available: {DialogText dt, AgentContext context ->
+				
+				Boolean ageAbove = context.getBooleanFact(scope, FACT_AGE)?.booleanValue
+				return ageAbove != null && ageAbove.booleanValue()
+//				return true
+												
+			},
+			
+			
 			text: { AgentContext context ->
 				"Please drink responsibly. Bye!"
 			}
@@ -605,12 +699,37 @@ class WhiskyBotBuilder extends BotBuilder {
 			
 			if( DialogMode.search == context.dialogState.mode ) {
 				
-				context.sendTextMessage(utm, "The ${WHISKY_BOT} dialog is now complete.")
+				context.sendTextMessage(utm, "The ${name} dialog is now complete.")
 				
-				return true
+				return true;
+				
+			} else {
+			
+				//
+
+				DialogElement de = context.dialogState.queue.peekElement()
+				
+				if(de instanceof DialogQuestion && de.sent) {
+					
+					context.sendTextMessage(utm, "Please answer this question about your preference in whiskey: ")
+					
+					//use same question as next
+					//keep it in the queue and resend with help info
+					de.sent = false
+								
+					//question URI must be changed - new message instance
+					de.generateURI()
+									
+					context.sendQuestion(de, utm, null)
+					
+					return true;
+					
+				}
+								
 			}
 			
 			return false
+			
 			
 		})
 		
@@ -633,9 +752,33 @@ class WhiskyBotBuilder extends BotBuilder {
 				return true
 			}
 			
+			EntityMessage em = new EntityMessage()
+			em.text = "Whiskey Details"
+			context.sendGenericMessage(msg, em, whisky)
+			
+			/*
 			EmbeddedCard cardForObject = new EmbeddedCard().generateURI(app)
 				
 			context.sendTextMessage(msg, "Whiskey details:\n <json>[${cardForObject.toJSON()}, ${whisky.toJSON()}]</json>")
+			*/
+			
+			
+			//also repeat the previous question
+			DialogElement de = context.dialogState.queue.peekElement()
+			
+			if(de instanceof DialogQuestion) {
+				
+				//use same question as next
+				//keep it in the queue and resend with help info
+				de.sent = false
+							
+				//question URI must be changed - new message instance
+				de.generateURI()
+								
+				context.sendQuestion(de, msg, null)
+				
+			}
+			
 			
 			return true
 			
