@@ -83,6 +83,9 @@ class WhiskyBotBuilder extends BotBuilder {
 		factPropertyName: FACT_WHISKY_ROUND
 	)
 	
+	//not bound to a question
+	public final static String FACT_SEEN_WHISKY = 'seen-whisky'
+	
 	
 	public final static String FACT_NEXT_WHISKY_URI = 'next-whisky-uri'
 	
@@ -289,9 +292,20 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 				
 				List<String> seenURIs = []
 				
-				for( WhiskyPreferenceFact wsf :  context.getFactsContainerView(scope).iterator(WhiskyPreferenceFact.class) ) {
-					seenURIs.add(wsf.whiskyURI.get())
+				for(StringPropertyFact spf : context.getFactsContainerView(scope).iterator(StringPropertyFact.class) ) {
+				
+					String propName = spf.propertyName
+					
+					if(propName == FACT_SEEN_WHISKY) {
+						String seenURI = spf.stringValue
+						if(seenURI) seenURIs.add(seenURI)
+					}
+						
 				}
+				
+//				for( WhiskyPreferenceFact wsf :  context.getFactsContainerView(scope).iterator(WhiskyPreferenceFact.class) ) {
+//					seenURIs.add(wsf.whiskyURI.get())
+//				}
 
 				Random r = new Random()
 				//offset will be random
@@ -497,14 +511,29 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 					liked = false
 				}
 				
+				VITAL_Container factsContainer = context.getFactsContainerView(FactScope.profile)
+				
+				//remove all previous whiskey facts
+				for(WhiskyPreferenceFact wpf : factsContainer.iterator(WhiskyPreferenceFact.class, false)) {
+					if(wpf.whiskyURI?.toString() == whiskyURI) {
+						context.removeFactByURI(wpf.URI)
+					}
+				}
+				
 				WhiskyPreferenceFact fact = new WhiskyPreferenceFact().generateURI(app)
 				fact.whiskyURI = whiskyURI
 				fact.liked = liked
-				
-				context.addGenericFactObject(scope, context.getFactGraphRoot(scope), fact)
+				context.addGenericFactObject(FactScope.profile, context.getFactGraphRoot(FactScope.profile), fact)
 			
+				
+				StringPropertyFact seenFact = new StringPropertyFact().generateURI(app)
+				seenFact.propertyName = FACT_SEEN_WHISKY
+				seenFact.stringValue = whiskyURI
+				
+				context.addGenericFactObject(scope, context.getFactGraphRoot(scope), seenFact)
+				
 				//in order to revert it
-				questionData.factsURIs.add(fact.URI)
+				questionData.factsURIs.add(seenFact.URI)
 					
 				return true
 				
@@ -784,7 +813,7 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 			}
 			
 			EntityMessage em = new EntityMessage()
-			em.text = "Whiskey Details"
+			em.text = " "
 			context.sendGenericMessage(msg, em, whisky)
 			
 			/*
