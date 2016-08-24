@@ -12,6 +12,7 @@ import org.example.whiskies.domain.properties.Property_hasClusterDistance
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import ai.haley.agent.api.ActionSource
 import ai.haley.agent.api.AgentContext
 import ai.haley.agent.api.DialogMode
 import ai.haley.agent.api.FactScope
@@ -158,7 +159,35 @@ Naturally "Skip" skips a question, and "Go Back" returns to the previous questio
 			
 			
 		}
+	
 		
+		
+		onBotSwitched = { AgentContext context, ActionSource actionSource, List<GraphObject>... intitialMessages ->
+			
+			//check top of the queue to see if the dialog is new
+			DialogElement de = context.dialogState.queue.peekElement()
+			
+			if(de instanceof DialogQuestion && de.sent) {
+			
+//				context.sendTextMessage(null, "Please answer this question about your preference in whiskey: ")
+			
+				//use same question as next
+				//keep it in the queue and resend with help info
+				de.sent = false
+						
+				//question URI must be changed - new message instance
+				de.generateURI()
+							
+				context.sendQuestion(de, null, null)
+			
+				return true;
+			
+			}
+							
+			return false
+			
+		}
+			
 	}
 	
 
